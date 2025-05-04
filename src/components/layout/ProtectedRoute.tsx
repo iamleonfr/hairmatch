@@ -1,9 +1,8 @@
 
-import React from 'react';
 import { Navigate } from 'react-router-dom';
-import { useAuth } from '@clerk/clerk-react';
-import { supabase } from '@/integrations/supabase/client';
+import { useUser } from '@clerk/clerk-react';
 import { useQuery } from '@tanstack/react-query';
+import { supabase } from '@/integrations/supabase/client';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -11,47 +10,43 @@ interface ProtectedRouteProps {
 }
 
 export const ProtectedRoute = ({ children, requiredRole }: ProtectedRouteProps) => {
-  const { isLoaded, userId, isSignedIn } = useAuth();
+  const { user, isSignedIn, isLoaded } = useUser();
 
   const { data: userRole, isLoading: isRoleLoading } = useQuery({
-    queryKey: ['userRole', userId],
+    queryKey: ['userRole', user?.id],
     queryFn: async () => {
-      if (!userId) return null;
-      
-      // First check in the profiles table for role
-      const { data: profileData, error: profileError } = await supabase
+      if (!user?.id) return null;
+
+      const { data, error } = await supabase
         .from('profiles')
         .select('role')
-        .eq('id', userId)
+        .eq('id', user.id)
         .single();
-      
-      if (profileError) {
-        console.error('Error fetching user profile:', profileError);
+
+      if (error) {
+        console.error('Error fetching user role:', error);
         return null;
       }
-      
-      return profileData?.role || null;
+
+      return data?.role || null;
     },
-    enabled: !!userId && isSignedIn,
+    enabled: !!user?.id && isSignedIn,
   });
 
-  if (!isLoaded || (isSignedIn && isRoleLoading)) {
+  if (!isLoaded || isRoleLoading) {
     return <div className="flex h-screen items-center justify-center">Loading...</div>;
   }
 
-  if (!userId || !isSignedIn) {
+  if (!isSignedIn) {
     return <Navigate to="/auth" />;
   }
 
-  // If a specific role is required and the user doesn't have it
   if (requiredRole && userRole !== requiredRole) {
-    // Redirect based on user's actual role
     if (userRole === 'barber') {
       return <Navigate to="/barber-dashboard" />;
     } else if (userRole === 'admin') {
       return <Navigate to="/admin-dashboard" />;
     } else {
-      // Default for users
       return <Navigate to="/user-profile" />;
     }
   }
