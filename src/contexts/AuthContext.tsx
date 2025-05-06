@@ -212,3 +212,6 @@ export const useAuth = () => {
   }
   return context;
 };
+
+// Ensure useAuth is exported
+export { AuthContext, AuthProvider, useAuth };
