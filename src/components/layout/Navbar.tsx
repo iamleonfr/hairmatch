@@ -12,37 +12,13 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger 
 } from '@/components/ui/dropdown-menu';
-import { useAuth, useUser, SignOutButton } from '@clerk/clerk-react';
+import { useAuth } from '@/contexts/AuthContext';
 import { useQuery } from '@tanstack/react-query';
-import { supabase } from '@/integrations/supabase/client';
 
 const Navbar = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const { isSignedIn } = useAuth();
-  const { user } = useUser();
+  const { user, profile, signOut } = useAuth();
   const navigate = useNavigate();
-
-  // Fetch user role from Supabase
-  const { data: userRole } = useQuery({
-    queryKey: ['userRole', user?.id],
-    queryFn: async () => {
-      if (!user?.id) return null;
-      
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('role')
-        .eq('id', user.id)
-        .single();
-      
-      if (error) {
-        console.error('Error fetching user role:', error);
-        return null;
-      }
-      
-      return data?.role || null;
-    },
-    enabled: !!user?.id,
-  });
 
   const toggleMenu = () => {
     setIsMenuOpen(prev => !prev);
@@ -53,9 +29,9 @@ const Navbar = () => {
   };
 
   const getInitials = () => {
-    if (!user) return 'U';
-    const firstName = user.firstName || '';
-    const lastName = user.lastName || '';
+    if (!profile) return 'U';
+    const firstName = profile.first_name || '';
+    const lastName = profile.last_name || '';
     return (firstName.charAt(0) + lastName.charAt(0)).toUpperCase();
   };
 
@@ -79,7 +55,7 @@ const Navbar = () => {
             <Link to="/preferences" className="text-gray-700 hover:text-barber-primary transition-colors">
               Hair Quiz
             </Link>
-            {userRole !== 'barber' && (
+            {profile?.role !== 'barber' && (
               <Link to="/barber-registration" className="text-gray-700 hover:text-barber-primary transition-colors flex items-center">
                 <UserPlus size={16} className="mr-1" />
                 For Barbers
@@ -89,12 +65,12 @@ const Navbar = () => {
 
           {/* User Menu / Auth Buttons */}
           <div className="hidden md:flex items-center space-x-4">
-            {isSignedIn && user ? (
+            {user ? (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button variant="ghost" className="relative h-10 w-10 rounded-full">
                     <Avatar>
-                      <AvatarImage src={user.imageUrl} />
+                      <AvatarImage src={profile?.avatar_url || ''} />
                       <AvatarFallback>{getInitials()}</AvatarFallback>
                     </Avatar>
                   </Button>
@@ -108,21 +84,22 @@ const Navbar = () => {
                   <DropdownMenuItem onClick={() => navigate('/bookings')}>
                     My Bookings
                   </DropdownMenuItem>
-                  {userRole === 'barber' && (
+                  {profile?.role === 'barber' && (
                     <DropdownMenuItem onClick={() => navigate('/barber-dashboard')}>
                       Barber Dashboard
                     </DropdownMenuItem>
                   )}
-                  {userRole === 'admin' && (
+                  {profile?.role === 'admin' && (
                     <DropdownMenuItem onClick={() => navigate('/admin-dashboard')}>
                       Admin Dashboard
                     </DropdownMenuItem>
                   )}
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem>
-                    <SignOutButton>
-                      <button className="w-full text-left">Log out</button>
-                    </SignOutButton>
+                  <DropdownMenuItem onClick={async () => {
+                    await signOut();
+                    navigate('/');
+                  }}>
+                    Log out
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
@@ -161,7 +138,7 @@ const Navbar = () => {
           <Link to="/preferences" className="py-2 text-gray-700 hover:text-barber-primary" onClick={closeMenu}>
             Hair Quiz
           </Link>
-          {userRole !== 'barber' && (
+          {profile?.role !== 'barber' && (
             <Link to="/barber-registration" className="py-2 text-gray-700 hover:text-barber-primary flex items-center" onClick={closeMenu}>
               <UserPlus size={16} className="mr-1" />
               For Barbers
@@ -169,16 +146,16 @@ const Navbar = () => {
           )}
           
           <div className="pt-4 border-t">
-            {isSignedIn && user ? (
+            {user ? (
               <>
                 <div className="flex items-center mb-4">
                   <Avatar className="h-10 w-10 mr-4">
-                    <AvatarImage src={user.imageUrl} />
+                    <AvatarImage src={profile?.avatar_url || ''} />
                     <AvatarFallback>{getInitials()}</AvatarFallback>
                   </Avatar>
                   <div>
-                    <div className="font-medium">{user.emailAddresses[0]?.emailAddress}</div>
-                    <div className="text-sm text-gray-500">{user.firstName} {user.lastName}</div>
+                    <div className="font-medium">{user.email}</div>
+                    <div className="text-sm text-gray-500">{profile?.first_name} {profile?.last_name}</div>
                   </div>
                 </div>
                 <div className="space-y-2">
@@ -188,21 +165,26 @@ const Navbar = () => {
                   <Link to="/bookings" className="block py-2 text-gray-700 hover:text-barber-primary" onClick={closeMenu}>
                     My Bookings
                   </Link>
-                  {userRole === 'barber' && (
+                  {profile?.role === 'barber' && (
                     <Link to="/barber-dashboard" className="block py-2 text-gray-700 hover:text-barber-primary" onClick={closeMenu}>
                       Barber Dashboard
                     </Link>
                   )}
-                  {userRole === 'admin' && (
+                  {profile?.role === 'admin' && (
                     <Link to="/admin-dashboard" className="block py-2 text-gray-700 hover:text-barber-primary" onClick={closeMenu}>
                       Admin Dashboard
                     </Link>
                   )}
-                  <SignOutButton>
-                    <button onClick={closeMenu} className="block w-full text-left py-2 text-red-600 hover:text-red-800">
-                      Log out
-                    </button>
-                  </SignOutButton>
+                  <button 
+                    onClick={async () => {
+                      await signOut();
+                      closeMenu();
+                      navigate('/');
+                    }} 
+                    className="block w-full text-left py-2 text-red-600 hover:text-red-800"
+                  >
+                    Log out
+                  </button>
                 </div>
               </>
             ) : (

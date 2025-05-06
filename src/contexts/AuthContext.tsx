@@ -1,7 +1,7 @@
 
 import { createContext, useContext, useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { User, Session } from '@supabase/supabase-js';
+import { Session, User } from '@supabase/supabase-js';
 import { useToast } from '@/hooks/use-toast';
 
 interface AuthContextType {
@@ -49,6 +49,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     if (user?.id) {
       const profile = await fetchUserProfile(user.id);
       setProfile(profile);
+      console.log("Profile refreshed:", profile);
     }
   };
 
@@ -65,6 +66,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           setTimeout(() => {
             fetchUserProfile(session.user.id).then(profile => {
               setProfile(profile);
+              console.log("Profile fetched on auth change:", profile);
             });
           }, 0);
         } else {
@@ -75,12 +77,14 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
     // THEN check for existing session
     supabase.auth.getSession().then(({ data: { session } }) => {
+      console.log("Initial session check:", session ? "Session found" : "No session");
       setSession(session);
       setUser(session?.user ?? null);
       
       if (session?.user) {
         fetchUserProfile(session.user.id).then(profile => {
           setProfile(profile);
+          console.log("Initial profile fetch:", profile);
           setLoading(false);
         });
       } else {
@@ -93,6 +97,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   const signIn = async (email: string, password: string) => {
     try {
+      console.log("Signing in with email:", email);
       const { error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) throw error;
       
@@ -109,13 +114,16 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         description: error instanceof Error ? error.message : "An unknown error occurred",
         variant: "destructive",
       });
-      return { error };
+      return { error: error as Error };
     }
   };
 
   const signUp = async (email: string, password: string, firstName: string, lastName: string) => {
     try {
-      const { error } = await supabase.auth.signUp({
+      console.log("Signing up with email:", email);
+      
+      // First, create the auth user with Supabase
+      const { error: signUpError, data } = await supabase.auth.signUp({
         email,
         password,
         options: {
@@ -126,7 +134,25 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         },
       });
 
-      if (error) throw error;
+      if (signUpError) throw signUpError;
+      
+      // Then create or update the user profile
+      if (data.user) {
+        const { error: profileError } = await supabase
+          .from('profiles')
+          .upsert({
+            id: data.user.id,
+            first_name: firstName,
+            last_name: lastName,
+            role: 'customer', // Default role
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          });
+        
+        if (profileError) {
+          console.error('Error creating profile:', profileError);
+        }
+      }
       
       toast({
         title: "Account created",
@@ -141,7 +167,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         description: error instanceof Error ? error.message : "An unknown error occurred",
         variant: "destructive",
       });
-      return { error };
+      return { error: error as Error };
     }
   };
 

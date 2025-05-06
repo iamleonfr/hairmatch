@@ -1,6 +1,5 @@
 
-import { useState } from 'react';
-import { useUser } from '@clerk/clerk-react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -10,31 +9,59 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useToast } from '@/hooks/use-toast';
 import Navbar from '@/components/layout/Navbar';
 import Footer from '@/components/layout/Footer';
+import { useAuth } from '@/contexts/AuthContext';
+import { supabase } from '@/integrations/supabase/client';
+import { useNavigate } from 'react-router-dom';
 
 const UserProfile = () => {
-  const { user } = useUser();
+  const { user, profile, refreshProfile } = useAuth();
   const { toast } = useToast();
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   
-  const [firstName, setFirstName] = useState(user?.firstName || '');
-  const [lastName, setLastName] = useState(user?.lastName || '');
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
+
+  useEffect(() => {
+    // Update form state when profile data is loaded or refreshed
+    if (profile) {
+      setFirstName(profile.first_name || '');
+      setLastName(profile.last_name || '');
+    }
+  }, [profile]);
 
   const getInitials = () => {
-    if (!user) return 'U';
-    const firstChar = user.firstName?.charAt(0) || '';
-    const lastChar = user.lastName?.charAt(0) || '';
+    if (!profile) return 'U';
+    const firstChar = profile.first_name?.charAt(0) || '';
+    const lastChar = profile.last_name?.charAt(0) || '';
     return (firstChar + lastChar).toUpperCase();
   };
 
   const handleUpdateProfile = async () => {
-    if (!user) return;
+    if (!user) {
+      toast({
+        title: "Not logged in",
+        description: "You must be logged in to update your profile.",
+        variant: "destructive"
+      });
+      return;
+    }
     
     setLoading(true);
     try {
-      await user.update({
-        firstName,
-        lastName
-      });
+      const { error } = await supabase
+        .from('profiles')
+        .update({
+          first_name: firstName,
+          last_name: lastName,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', user.id);
+        
+      if (error) throw error;
+      
+      // Refresh the profile data in the context
+      await refreshProfile();
       
       toast({
         title: "Profile updated",
@@ -64,26 +91,47 @@ const UserProfile = () => {
               <Card>
                 <CardHeader className="text-center">
                   <Avatar className="w-24 h-24 mx-auto mb-4">
-                    <AvatarImage src={user?.imageUrl} />
+                    <AvatarImage src={profile?.avatar_url || undefined} />
                     <AvatarFallback className="text-lg">{getInitials()}</AvatarFallback>
                   </Avatar>
                   <CardTitle>
-                    {user?.firstName} {user?.lastName}
+                    {profile?.first_name} {profile?.last_name}
                   </CardTitle>
                   <CardDescription>
-                    {user?.emailAddresses[0]?.emailAddress}
+                    {user?.email}
+                  </CardDescription>
+                  <CardDescription className="mt-2">
+                    Role: {profile?.role || 'Customer'}
                   </CardDescription>
                 </CardHeader>
-                <CardFooter>
+                <CardFooter className="flex flex-col gap-2">
                   <Button 
                     variant="outline" 
-                    className="w-full mt-2"
-                    onClick={() => window.location.assign(
-                      `${window.location.origin}/user/account`
-                    )}
+                    className="w-full"
+                    onClick={() => navigate('/preferences')}
                   >
-                    Manage Account
+                    Update Preferences
                   </Button>
+                  
+                  {profile?.role === 'barber' && (
+                    <Button 
+                      variant="outline" 
+                      className="w-full"
+                      onClick={() => navigate('/barber-dashboard')}
+                    >
+                      Barber Dashboard
+                    </Button>
+                  )}
+                  
+                  {profile?.role === 'admin' && (
+                    <Button 
+                      variant="outline" 
+                      className="w-full"
+                      onClick={() => navigate('/admin-dashboard')}
+                    >
+                      Admin Dashboard
+                    </Button>
+                  )}
                 </CardFooter>
               </Card>
             </div>
@@ -125,11 +173,11 @@ const UserProfile = () => {
                         <Label htmlFor="email">Email</Label>
                         <Input 
                           id="email" 
-                          value={user?.emailAddresses[0]?.emailAddress || ''} 
+                          value={user?.email || ''} 
                           disabled 
                         />
                         <p className="text-xs text-muted-foreground mt-1">
-                          Email can be changed in account settings
+                          Contact support to change your email
                         </p>
                       </div>
                     </CardContent>
@@ -159,7 +207,7 @@ const UserProfile = () => {
                           Take our hair quiz to set your preferences
                         </p>
                         <Button
-                          onClick={() => window.location.href = '/preferences'}
+                          onClick={() => navigate('/preferences')}
                           className="bg-barber-primary hover:bg-blue-800"
                         >
                           Take Hair Quiz
@@ -183,7 +231,7 @@ const UserProfile = () => {
                           You don't have any appointments yet
                         </p>
                         <Button
-                          onClick={() => window.location.href = '/barbers'}
+                          onClick={() => navigate('/barbers')}
                           className="bg-barber-primary hover:bg-blue-800"
                         >
                           Find a Barber
